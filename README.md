@@ -5,7 +5,7 @@ REST API do zarządzania bazą danych filmów i aktorów, zbudowane przy użyciu
 ## Funkcjonalności
 
 - Pełny CRUD dla filmów (tytuł, rok, reżyser, opis)
-- Pełny CRUD dla aktorów (imię, rok urodzenia)
+- Pełny CRUD dla aktorów (imię, nazwisko)
 - Relacja wiele-do-wielu między filmami a aktorami
 - Endpoint do pobierania aktorów dla danego filmu
 - Dodatkowe endpointy: obliczenia matematyczne, geokodowanie
@@ -13,9 +13,9 @@ REST API do zarządzania bazą danych filmów i aktorów, zbudowane przy użyciu
 ## Technologie
 
 - **Framework**: FastAPI
-- **ORM**: SQLAlchemy 2.0
-- **Baza danych**: SQLite
-- **Python**: 3.8+
+- **ORM**: SQLAlchemy (prosty setup podobny do Peewee)
+- **Baza danych**: SQLite (movies-extended.db)
+- **Python**: 3.12+
 
 ## Instalacja
 
@@ -32,6 +32,11 @@ pip install -r requirements.txt
 ## Uruchomienie
 
 Uruchom serwer FastAPI:
+```bash
+fastapi dev main.py
+```
+
+Lub:
 ```bash
 uvicorn main:app --reload --port 8000
 ```
@@ -66,8 +71,8 @@ Dokumentacja API (Swagger): `http://127.0.0.1:8000/docs`
 - `POST /actors` - Dodaj nowego aktora
   ```json
   {
-    "name": "Leonardo DiCaprio",
-    "birth_year": 1974
+    "name": "Leonardo",
+    "surname": "DiCaprio"
   }
   ```
 - `PUT /actors/{id}` - Zaktualizuj aktora
@@ -99,29 +104,29 @@ MovieDBREST/
 
 ## Modele ORM
 
-### Movie
-- `ID` (Integer, Primary Key)
-- `title` (String, Required)
-- `year` (Integer, Required)
-- `director` (String, Required)
-- `description` (String, Optional)
-- `actors` (Relationship - wiele do wielu)
+### Movie (tabela: movie)
+- `id` (Integer, Primary Key)
+- `title` (String)
+- `year` (Integer)
+- `director` (String)
+- `description` (String)
 
-### Actor
-- `ID` (Integer, Primary Key)
-- `name` (String, Required)
-- `birth_year` (Integer, Optional)
-- `movies` (Relationship - wiele do wielu)
+### Actor (tabela: actor)
+- `id` (Integer, Primary Key)
+- `name` (String)
+- `surname` (String)
 
-### MovieActor (Tabela pośrednia)
-- `movie_id` (Foreign Key → movies.ID)
-- `actor_id` (Foreign Key → actors.ID)
+### movie_actor_through (Tabela pośrednia)
+- `movie_id` (Foreign Key → movie.id)
+- `actor_id` (Foreign Key → actor.id)
 
-## Przewaga ORM nad surowym SQL
+**Uwaga**: Modele ORM są uproszczone - bez definicji relacji (relationships). Połączenie między filmami a aktorami odbywa się przez surowe zapytanie SQL z JOIN.
 
+## Cechy implementacji ORM
+
+✅ **Prosty setup** - Jedna globalna sesja `db = Session(engine)` podobnie do Peewee  
 ✅ **Bezpieczeństwo** - Ochrona przed SQL Injection  
 ✅ **Czytelność** - Kod Pythonowy zamiast stringów SQL  
-✅ **Maintainability** - Łatwiejsze w utrzymaniu i modyfikacji  
-✅ **Relationships** - Automatyczne zarządzanie relacjami  
-✅ **Type Safety** - Wsparcie dla type hintów  
-✅ **Migrations** - Łatwa ewolucja schematu bazy danych
+✅ **Pydantic validation** - Walidacja requestów przez modele Pydantic  
+✅ **Type hints** - Wsparcie dla adnotacji typów  
+✅ **Poziom junior** - Prosty kod bez zaawansowanych wzorców (bez Depends, bez relationship)
