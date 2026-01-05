@@ -1,0 +1,37 @@
+### Get all movies
+GET http://localhost:8000/movies
+
+### Get single movie
+GET http://localhost:8000/movies/1
+
+### Add new movie
+POST http://localhost:8000/movies
+Content-Type: application/json
+
+{
+    "title": "The Shawshank Redemption",
+    "year": "1994",
+    "actors": "Tim Robbins, Morgan Freeman"
+}
+
+### Update movie
+PUT http://localhost:8000/movies/1
+Content-Type: application/json
+
+{
+    "title": "Updated Title",
+    "year": "2000",
+    "actors": "New Actor"
+}
+
+### Delete single movie
+DELETE http://localhost:8000/movies/2
+
+### Delete all movies
+DELETE http://localhost:8000/movies
+
+### Test root endpoint
+GET http://localhost:8000/
+
+### Test geocode
+GET http://localhost:8000/geocode?lat=52.229676&lon=21.012229
