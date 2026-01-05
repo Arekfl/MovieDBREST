@@ -19,31 +19,15 @@ REST API do zarządzania bazą danych filmów i aktorów, zbudowane przy użyciu
 
 ## Instalacja
 
-1. Sklonuj repozytorium i przejdź do katalogu projektu:
-```bash
-cd MovieDBREST
-```
+1. Sklonuj repozytorium i przejdź do katalogu projektu: MovieDBREST
 
-2. Zainstaluj wymagane pakiety:
-```bash
-pip install -r requirements.txt
-```
+2. Zainstaluj wymagane pakiety: requirements.txt
 
 ## Uruchomienie
 
-Uruchom serwer FastAPI:
-```bash
-fastapi dev main.py
-```
-
-Lub:
-```bash
-uvicorn main:app --reload --port 8000
-```
+Uruchom serwer FastAPI: fastapi dev main.py
 
 Aplikacja będzie dostępna pod adresem: `http://127.0.0.1:8000`
-
-Dokumentacja API (Swagger): `http://127.0.0.1:8000/docs`
 
 ## Endpointy API
 
@@ -119,14 +103,3 @@ MovieDBREST/
 ### movie_actor_through (Tabela pośrednia)
 - `movie_id` (Foreign Key → movie.id)
 - `actor_id` (Foreign Key → actor.id)
-
-**Uwaga**: Modele ORM są uproszczone - bez definicji relacji (relationships). Połączenie między filmami a aktorami odbywa się przez surowe zapytanie SQL z JOIN.
-
-## Cechy implementacji ORM
-
-✅ **Prosty setup** - Jedna globalna sesja `db = Session(engine)` podobnie do Peewee  
-✅ **Bezpieczeństwo** - Ochrona przed SQL Injection  
-✅ **Czytelność** - Kod Pythonowy zamiast stringów SQL  
-✅ **Pydantic validation** - Walidacja requestów przez modele Pydantic  
-✅ **Type hints** - Wsparcie dla adnotacji typów  
-✅ **Poziom junior** - Prosty kod bez zaawansowanych wzorców (bez Depends, bez relationship)
