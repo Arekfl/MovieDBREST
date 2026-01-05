@@ -19,7 +19,11 @@ ENV/
 *~
 
 # Zone Identifier (Windows WSL)
+*:Zone.Identifier
 *.Identifier
+
+# Panda Security metadata
+*:PG$Secure
 
 # Environment variables
 .env
