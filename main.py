@@ -1,9 +1,60 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 import requests
-import sqlite3
-from typing import Any
+from typing import Any, List, Optional
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Table
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
 
 app = FastAPI()
+
+# Database configuration
+DATABASE_URL = "sqlite:///./movies-extended.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Association table for many-to-many relationship between movies and actors
+movie_actors = Table(
+    'movie_actor_through',
+    Base.metadata,
+    Column('movie_id', Integer, ForeignKey('movie.id'), primary_key=True),
+    Column('actor_id', Integer, ForeignKey('actor.id'), primary_key=True)
+)
+
+# ORM Models
+class Movie(Base):
+    __tablename__ = 'movie'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    year = Column(Integer, nullable=False)
+    director = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    
+    actors = relationship("Actor", secondary=movie_actors, back_populates="movies")
+
+class Actor(Base):
+    __tablename__ = 'actor'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    surname = Column(String, nullable=False)
+    
+    movies = relationship("Movie", secondary=movie_actors, back_populates="actors")
+
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Note: Database tables already exist, no need to create them
+# If you need to create tables, uncomment the following:
+# @app.on_event("startup")
+# def startup_event():
+#     Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def read_root():
@@ -35,190 +86,205 @@ def geocode(lat: float, lon: float):
     return response.json()
 
 @app.get('/movies')
-def get_movies():
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        conn.row_factory = sqlite3.Row  # Pozwala na dostęp do kolumn po nazwie
-        cursor = conn.cursor()
-        
-        # Pobieramy wszystkie filmy
-        cursor.execute("SELECT * FROM movies")
-        rows = cursor.fetchall()
-        
-        # Budujemy listę obiektów
-        output = []
-        for row in rows:
-            movie = {
-                'id': row['ID'],
-                'title': row['title'],
-                'year': row['year'],
-                'actors': row['actors']
-            }
-            output.append(movie)
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return output
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+def get_movies(db: Session = Depends(get_db)):
+    movies = db.query(Movie).all()
+    return [
+        {
+            'id': movie.id,
+            'title': movie.title,
+            'year': movie.year,
+            'director': movie.director,
+            'description': movie.description
+        }
+        for movie in movies
+    ]
 
 @app.get('/movies/{movie_id}')
-def get_single_movie(movie_id:int):
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        conn.row_factory = sqlite3.Row  # Pozwala na dostęp do kolumn po nazwie
-        cursor = conn.cursor()
-        
-        # Pobieramy film o podanym ID
-        cursor.execute("SELECT * FROM movies WHERE ID=?", (movie_id,))
-        row = cursor.fetchone()
-        
-        if row is None:
-            conn.close()
-            return {"error": "Movie not found"}
-        
-        movie = {
-            'id': row['ID'],
-            'title': row['title'],
-            'year': row['year'],
-            'actors': row['actors']
-        }
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return movie
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+def get_single_movie(movie_id: int, db: Session = Depends(get_db)):
+    movie = db.query(Movie).filter(Movie.id == movie_id).first()
+    
+    if movie is None:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    
+    return {
+        'id': movie.id,
+        'title': movie.title,
+        'year': movie.year,
+        'director': movie.director,
+        'description': movie.description
+    }
 
 @app.post("/movies")
-def add_movie(params: dict[str, Any]):
+def add_movie(params: dict[str, Any], db: Session = Depends(get_db)):
     title = params.get('title')
     year = params.get('year')
-    actors = params.get('actors')
+    director = params.get('director')
+    description = params.get('description', '')  # Default to empty string
     
-    # Walidacja danych wejściowych
     if not title:
-        return {"error": "Title is required"}
+        raise HTTPException(status_code=400, detail="Title is required")
     if not year:
-        return {"error": "Year is required"}
-    if not actors:
-        return {"error": "Actors is required"}
+        raise HTTPException(status_code=400, detail="Year is required")
+    if not director:
+        raise HTTPException(status_code=400, detail="Director is required")
     
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        cursor = conn.cursor()
-        
-        # Wstawiamy nowy film
-        cursor.execute("INSERT INTO movies (title, year, actors) VALUES (?, ?, ?)", (title, year, actors))
-        conn.commit()
-        
-        # Pobieramy ID nowo dodanego filmu
-        movie_id = cursor.lastrowid
-        
-        # Sprawdzamy czy film został dodany (cursor.rowcount)
-        if cursor.rowcount == 0:
-            conn.close()
-            return {"error": "Failed to add movie"}
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return {"message": f"Movie added successfully", "movie_id": movie_id}
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+    movie = Movie(
+        title=str(title),
+        year=int(year),
+        director=str(director),
+        description=str(description) if description else ''
+    )
+    
+    db.add(movie)
+    db.commit()
+    db.refresh(movie)
+    
+    return {"message": "Movie added successfully", "movie_id": movie.id}
 
 @app.put("/movies/{movie_id}")
-def update_movie(movie_id: int, params: dict[str, Any]):
+def update_movie(movie_id: int, params: dict[str, Any], db: Session = Depends(get_db)):
+    movie = db.query(Movie).filter(Movie.id == movie_id).first()
+    
+    if movie is None:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    
     title = params.get('title')
     year = params.get('year')
-    actors = params.get('actors')
+    director = params.get('director')
+    description = params.get('description')
     
-    # Walidacja danych wejściowych
     if not title:
-        return {"error": "Title is required"}
+        raise HTTPException(status_code=400, detail="Title is required")
     if not year:
-        return {"error": "Year is required"}
-    if not actors:
-        return {"error": "Actors is required"}
+        raise HTTPException(status_code=400, detail="Year is required")
+    if not director:
+        raise HTTPException(status_code=400, detail="Director is required")
     
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        cursor = conn.cursor()
-        
-        # Aktualizujemy film
-        cursor.execute("UPDATE movies SET title=?, year=?, actors=? WHERE ID=?", (title, year, actors, movie_id))
-        conn.commit()
-        
-        # Sprawdzamy czy film został zaktualizowany (cursor.rowcount)
-        if cursor.rowcount == 0:
-            conn.close()
-            return {"error": "Movie not found"}
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return {"message": f"Movie {movie_id} updated successfully"}
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+    movie.title = str(title)  # type: ignore
+    movie.year = int(year)  # type: ignore
+    movie.director = str(director)  # type: ignore
+    if description is not None:
+        movie.description = str(description)  # type: ignore
+    
+    db.commit()
+    
+    return {"message": f"Movie {movie_id} updated successfully"}
 
 @app.delete("/movies/{movie_id}")
-def delete_movie(movie_id: int):
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        cursor = conn.cursor()
-        
-        # Usuwamy film
-        cursor.execute("DELETE FROM movies WHERE ID=?", (movie_id,))
-        conn.commit()
-        
-        # Sprawdzamy czy film został usunięty (cursor.rowcount)
-        if cursor.rowcount == 0:
-            conn.close()
-            return {"error": "Movie not found"}
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return {"message": f"Movie {movie_id} deleted successfully"}
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+def delete_movie(movie_id: int, db: Session = Depends(get_db)):
+    movie = db.query(Movie).filter(Movie.id == movie_id).first()
+    
+    if movie is None:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    
+    db.delete(movie)
+    db.commit()
+    
+    return {"message": f"Movie {movie_id} deleted successfully"}
 
 @app.delete("/movies")
-def delete_all_movies():
-    try:
-        # Łączymy się z bazą danych
-        conn = sqlite3.connect('movies.db')
-        cursor = conn.cursor()
-        
-        # Usuwamy wszystkie filmy
-        cursor.execute("DELETE FROM movies")
-        conn.commit()
-        
-        # Sprawdzamy ile filmów zostało usuniętych (cursor.rowcount)
-        deleted_count = cursor.rowcount
-        
-        # Zamykamy połączenie
-        conn.close()
-        
-        return {"message": f"All movies deleted successfully", "deleted_count": deleted_count}
-    except sqlite3.Error as e:
-        return {"error": f"Database error: {str(e)}"}
-    except Exception as e:
-        return {"error": f"Unexpected error: {str(e)}"}
+def delete_all_movies(db: Session = Depends(get_db)):
+    deleted_count = db.query(Movie).delete()
+    db.commit()
+    
+    return {"message": "All movies deleted successfully", "deleted_count": deleted_count}
+
+# ========== ACTORS ENDPOINTS ==========
+
+@app.get('/actors')
+def get_actors(db: Session = Depends(get_db)):
+    actors = db.query(Actor).all()
+    return [
+        {
+            'id': actor.id,
+            'name': actor.name,
+            'surname': actor.surname
+        }
+        for actor in actors
+    ]
+
+@app.get('/actors/{actor_id}')
+def get_single_actor(actor_id: int, db: Session = Depends(get_db)):
+    actor = db.query(Actor).filter(Actor.id == actor_id).first()
+    
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    
+    return {
+        'id': actor.id,
+        'name': actor.name,
+        'surname': actor.surname
+    }
+
+@app.post("/actors")
+def add_actor(params: dict[str, Any], db: Session = Depends(get_db)):
+    name = params.get('name')
+    surname = params.get('surname')
+    
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    if not surname:
+        raise HTTPException(status_code=400, detail="Surname is required")
+    
+    actor = Actor(
+        name=str(name),
+        surname=str(surname)
+    )
+    
+    db.add(actor)
+    db.commit()
+    db.refresh(actor)
+    
+    return {"message": "Actor added successfully", "actor_id": actor.id}
+
+@app.put("/actors/{actor_id}")
+def update_actor(actor_id: int, params: dict[str, Any], db: Session = Depends(get_db)):
+    actor = db.query(Actor).filter(Actor.id == actor_id).first()
+    
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    
+    name = params.get('name')
+    surname = params.get('surname')
+    
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    if not surname:
+        raise HTTPException(status_code=400, detail="Surname is required")
+    
+    actor.name = str(name)  # type: ignore
+    actor.surname = str(surname)  # type: ignore
+    
+    db.commit()
+    
+    return {"message": f"Actor {actor_id} updated successfully"}
+
+@app.delete("/actors/{actor_id}")
+def delete_actor(actor_id: int, db: Session = Depends(get_db)):
+    actor = db.query(Actor).filter(Actor.id == actor_id).first()
+    
+    if actor is None:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    
+    db.delete(actor)
+    db.commit()
+    
+    return {"message": f"Actor {actor_id} deleted successfully"}
+
+# ========== MOVIE-ACTORS RELATIONSHIP ==========
+
+@app.get('/movies/{movie_id}/actors')
+def get_movie_actors(movie_id: int, db: Session = Depends(get_db)):
+    movie = db.query(Movie).filter(Movie.id == movie_id).first()
+    
+    if movie is None:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    
+    return [
+        {
+            'id': actor.id,
+            'name': actor.name,
+            'surname': actor.surname
+        }
+        for actor in movie.actors
+    ]
